@@ -1,0 +1,54 @@
+name: Bug Report
+description: Report a reproducible issue or regression
+title: "[Bug]: "
+labels: [bug]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please provide enough detail for us to reproduce it.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expectation
+    attributes:
+      label: Expected behaviour
+      description: What should be happening? How will it behave when fixed?
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Python version, OS, deployment type (local/docker/prod)
+      placeholder: "Python 3.11, Ubuntu 22.04, Docker"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide exact reproduction steps
+      placeholder: |
+        1. Send request to...
+        2. With payload...
+        3. Observe error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Tracebacks
+      description: Paste relevant logs or error messages
+      render: shell

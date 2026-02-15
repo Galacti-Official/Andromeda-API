@@ -1,0 +1,21 @@
+name: Feature Request
+description: Suggest a new feature
+title: "[Feature]: "
+labels: ["feature"]
+
+body:
+  - type: textarea
+    id: feature
+    attributes:
+      label: Feature
+      description: What do you want to improve/add?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you implement it? (If you don't know type NONE)
+    validations:
+      required: true
