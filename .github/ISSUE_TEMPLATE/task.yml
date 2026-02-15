@@ -1,0 +1,107 @@
+name: Task
+description: Internal task for the Galacti team
+title: "[Task]: "
+labels: ["internal", "task"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for internal tasks related to API development.
+
+  - type: input
+    id: summary
+    attributes:
+      label: Task Summary
+      description: Briefly describe the task.
+      placeholder: Implement node heartbeat endpoint
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this task needed?
+      placeholder: This is required to allow agents to report health status.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included in this task?
+      placeholder: |
+        - Create database model
+        - Add POST /nodes/:id/heartbeat endpoint
+        - Update agent protocol
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of Scope
+      description: What is explicitly NOT included?
+      placeholder: Does not include metrics aggregation.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Task Type
+      options:
+        - Development
+        - Infrastructure
+        - Documentation
+        - Governance
+        - Security
+        - Refactor
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+    validations:
+      required: true
+
+  - type: input
+    id: milestone
+    attributes:
+      label: Target Milestone (if applicable)
+      placeholder: v0.1.0
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / Considerations
+      description: Any security, architectural, or operational risks?
+      placeholder: |
+        - May affect node authentication logic.
+        - Requires DB migration.
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this task is complete?
+      placeholder: |
+        - Endpoint returns 200 on valid heartbeat
+        - Tests added
+        - Documentation updated
+    validations:
+      required: true
