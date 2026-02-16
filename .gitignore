@@ -1,1 +1,8 @@
-__pycache__/   
+
+# Directories
+__pycache__/
+.pytest-cache/
+build/
+
+# Files
+.env
