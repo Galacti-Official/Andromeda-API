@@ -3,8 +3,8 @@ import asyncio
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlalchemy.ext.asyncio.session import AsyncSession, async_sessionmaker
-from sqlalchemy.engine import make_url
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio.session import async_sessionmaker
 
 
 load_dotenv()
