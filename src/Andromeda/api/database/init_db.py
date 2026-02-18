@@ -1,8 +1,9 @@
 from sqlmodel import SQLModel, text
-from Andromeda.api.database import engine
+from Andromeda.api.database.database import engine
+import asyncio
 
 import Andromeda.models
-import asyncio
+
 
 print(SQLModel.metadata.tables.keys())
 
