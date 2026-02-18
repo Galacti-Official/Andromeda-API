@@ -3,6 +3,7 @@
 __pycache__/
 .pytest-cache/
 build/
+Andromeda.egg-info/
 
 # Files
 .env
