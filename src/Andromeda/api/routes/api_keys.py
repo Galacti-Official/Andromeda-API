@@ -12,4 +12,7 @@ router = APIRouter(prefix="/api-keys", tags=["api_keys"])
 
 @router.post("/", response_model=CreatedKeyResponse)
 async def request_api_key(request: CreateKeyRequest, user: JWTPayload = Depends(get_current_user)):
-    return await create_api_key(request, user)
+    try:
+        return await create_api_key(request, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
