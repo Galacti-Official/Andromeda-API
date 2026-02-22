@@ -11,3 +11,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def get_token(request: UserTokenRequest) -> JWTResponse:
     token = await auth_user_key(request.api_key)
     return JWTResponse(access_token=token)
+
+
+@router.post("/login")
+async def login():
+    pass
+
+
+@router.post("/register")
+async def register():
+    pass

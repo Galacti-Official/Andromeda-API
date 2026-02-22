@@ -10,8 +10,6 @@ class CreatedKeyResponse(BaseModel):
     type: str
     env: str
     scopes: list[str]
-    kid: str
-    secret: str
     key: str
 
 

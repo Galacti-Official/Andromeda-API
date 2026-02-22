@@ -11,8 +11,24 @@ class UserCreate(SQLModel):
     name: str
     email: str
     password_hash: str
+    last_login: datetime
 
 
 class UserPublic(SQLModel):
     id: UUID
+    name: str
+    email: str
+    avatar: str
+    last_login: datetime
     created_at: datetime
+
+
+class UserLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserLoginResponse(BaseModel):
+    success: bool
+    message: str
+    user: UserPublic

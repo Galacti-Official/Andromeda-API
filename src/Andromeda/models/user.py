@@ -20,8 +20,14 @@ class User(SQLModel, table=True):
 
     keys: List["UserKey"] = Relationship(back_populates="user")
 
+    avatar: str = Field(default="https://cdn.galacti.org/avatars/default.png")
+
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+
+    last_login: datetime | None = Field(
         sa_column=Column(DateTime(timezone=True), nullable=False)
     )
 
