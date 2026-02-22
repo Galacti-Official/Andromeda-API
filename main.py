@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
+from uuid import UUID
 
 # Database
 from Andromeda.api.database.init_db import init_db
@@ -18,9 +19,13 @@ from Andromeda.models.user import User, UserKey
 # Schemas
 from Andromeda.schemas.user import UserCreate, UserPublic
 from Andromeda.schemas.jwt import JWTPayload
+from Andromeda.schemas.key import CreatedKeyResponse
 
 # Auth
 from Andromeda.auth.dependancies import get_current_user, require_scope
+
+from Andromeda.auth.hashing import hash_secret
+from Andromeda.services.api_key_service import gen_kid, gen_secret, format_key
 
 
 @asynccontextmanager
@@ -51,7 +56,7 @@ async def create_user(payload: UserCreate):
         return user
 
 
-@app.get("/users",response_model=list[UserPublic])
+@app.get("/users", response_model=list[UserPublic])
 async def read_users(user: JWTPayload = Depends(require_scope("user:view"))):
     if not user:
         raise HTTPException(status_code=403, detail="Access denied, you do not have the right permissions to use this path")
@@ -60,6 +65,28 @@ async def read_users(user: JWTPayload = Depends(require_scope("user:view"))):
         result = await session.exec(select(User))
         users = result.all()
         return users
+    
+
+@app.post("/genkey", response_model=CreatedKeyResponse)
+async def genkey(key_user_id: UUID, key_name: str):
+    key_id = gen_kid()
+    secret = gen_secret()
+    key_secret_hash = hash_secret(secret)
+    key_scopes = ["user:view"]
+    
+
+    key_type_prefix = "sk"
+    key_env_type = "live"
+
+    full_key = format_key(key_type_prefix, key_env_type, key_id, secret)
+
+    async with AsyncSession(engine) as session:
+        key = UserKey(user_id=key_user_id, name = key_name, kid=key_id, secret_hash=key_secret_hash, scopes=key_scopes)
+        session.add(key)
+        await session.commit()
+        await session.refresh(key)
+
+    return CreatedKeyResponse(name=key_name, type=key_type_prefix, env=key_env_type, scopes=key_scopes, key=full_key)
 
 
 
