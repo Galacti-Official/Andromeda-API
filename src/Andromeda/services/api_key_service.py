@@ -5,10 +5,9 @@ import shortuuid
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
-from Andromeda.api.database.database import engine
+from Andromeda.api.database.database import get_session
 from Andromeda.auth.hashing import hash_secret
 
 from Andromeda.models.user import User, UserKey
@@ -20,10 +19,11 @@ from Andromeda.schemas.jwt import JWTPayload
 valid_user_types = ["user", "client", "node"]
 
 valid_type_prefixes = ["sk", "nk", "wk", "mk", "fk"]
+
 valid_env_types = ["live", "test"]
 
 
-
+# Utils
 def gen_secret() -> str:
     raw = secrets.token_bytes(32)
     return base64.urlsafe_b64encode(raw).rstrip(b'=').decode()
@@ -50,7 +50,7 @@ def format_key(prefix: str, type: str, kid: str, secret: str) -> str:
 
 
 
-async def create_api_key(request: CreateKeyRequest, user: JWTPayload, session=AsyncSession(engine)) -> Optional[CreatedKeyResponse]:
+async def create_api_key(request: CreateKeyRequest, user: JWTPayload) -> Optional[CreatedKeyResponse]:
     if request is None:
         raise HTTPException(status_code=400, detail="Invalid request")
     
@@ -62,30 +62,21 @@ async def create_api_key(request: CreateKeyRequest, user: JWTPayload, session=As
     if sub_components[0] == "client":
         client_kid = sub_components[1]
 
-        result = await session.exec(select(User).join(UserKey).where(UserKey.kid == client_kid))
-        client_user = result.first()
+        async with get_session() as session:
+            result = await session.exec(select(User).join(UserKey).where(UserKey.kid == client_kid))
+            client_user = result.one_or_none()
 
-        if client_user is None:
-            raise HTTPException(status_code=401, detail="Invalid user")
+            if client_user is None:
+                raise HTTPException(status_code=401, detail="Invalid user")
 
-        key_name = request.name
-        key_user_id = client_user.id
-        key_scopes = request.scopes
+            key_id = gen_kid()
+            key_secret = gen_secret()
 
-        key_type_prefix = request.type
-        key_env_type = request.env
+            full_key = format_key(prefix=request.type, type=request.env, kid=key_id, secret=key_secret)
 
-        key_id = gen_kid()
-        key_secret = gen_secret()
+            key = UserKey(user_id=client_user.id, name=request.name, kid=key_id, secret_hash=hash_secret(key_secret), scopes=request.scopes)
+            session.add(key)
+            await session.commit()
+            await session.refresh(key)
 
-        key_secret_hash = hash_secret(key_secret)
-
-        full_key = format_key(key_type_prefix, key_env_type, key_id, key_secret)
-
-        key = UserKey(user_id=key_user_id, name = key_name, kid=key_id, secret_hash=key_secret_hash, scopes=key_scopes)
-        session.add(key)
-        await session.commit()
-        await session.refresh(key)
-
-        return CreatedKeyResponse(name=key_name, type=key_type_prefix, env=key_env_type, scopes=key_scopes, kid=key_id, secret=key_secret, key=full_key)
-        
+            return CreatedKeyResponse(name=request.name, type=request.type, env=request.env, scopes=request.scopes, key=full_key)
