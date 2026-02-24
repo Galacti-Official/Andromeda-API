@@ -28,7 +28,7 @@ class User(SQLModel, table=True):
     )
 
     last_login: datetime | None = Field(
-        sa_column=Column(DateTime(timezone=True), nullable=False)
+        sa_column=Column(DateTime(timezone=True), nullable=True)
     )
 
 

@@ -10,5 +10,6 @@ class Settings(BaseSettings):
     jwt_public_key: str
     user_jwt_iss: str
     user_jwt_aud: str
+    production: str
 
 settings = Settings()  # type: ignore

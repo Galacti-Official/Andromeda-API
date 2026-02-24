@@ -1,26 +1,38 @@
-from fastapi import FastAPI, HTTPException, Depends
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select
-from uuid import UUID
+from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 
 # Database
-from Andromeda.api.database.init_db import init_db
-from Andromeda.api.database.database import engine, get_session
+from Andromeda.api.database.database import get_session
 
+# Security
+from Andromeda.auth.hashing import hash_password
+
+# Models
 from Andromeda.models.user import User
 
 # Schemas 
 from Andromeda.schemas.user import UserCreate
 
 
-async def create_user(user: UserCreate):
+async def create_user(request: UserCreate) -> User:
     async with get_session() as session:
-        result = await session.exec(select(User))
-        users = result.all()
-    
-    if user not in users:
-        raise HTTPException(status_code=409, detail="User already exists")
+        user = User(
+            name = request.name,
+            email = request.email,
+            password_hash = hash_password(request.password),
+            last_login = None
+        )
 
-    
-async def authorize_user():
+        session.add(user)
+
+        try:
+            await session.commit()
+            await session.refresh(user)
+            return user
+        except Exception as e:
+            print(f"Error: {e}")
+            raise
+
+
+async def reset_password():
     pass

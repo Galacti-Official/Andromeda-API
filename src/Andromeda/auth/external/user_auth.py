@@ -13,7 +13,43 @@ from Andromeda.schemas.jwt import JWTPayload
 from Andromeda.config import settings
 
 
-async def auth_user_key(key: str) -> str:
+COOKIE_NAME = "session"
+
+
+async def issue_token(sub_type: str, sub: str, scopes: list[str] | None) -> str:
+    encoded_jwt = jwt.encode(
+            {
+                "sub": f"{sub_type}:{sub}",
+                "scopes": scopes,
+                "iss": settings.user_jwt_iss,
+                "aud": settings.user_jwt_aud,
+                "iat": datetime.now(timezone.utc),
+                "nbf": datetime.now(timezone.utc),
+                "exp": datetime.now(timezone.utc) + timedelta(hours=1)             
+            },
+            settings.jwt_private_key,
+            algorithm="RS256"
+        )
+    
+    return encoded_jwt
+
+
+async def set_session_cookie(response, sub: str, scopes: list[str]):
+    token = issue_token("user", sub, scopes)
+
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=settings.production,
+        samesite="strict",
+        max_age=3600,
+    )
+
+
+
+
+async def auth_user_key(key: str):
     key_components = key.split("_")
 
     if len(key_components) != 4:
@@ -36,23 +72,13 @@ async def auth_user_key(key: str) -> str:
             raise HTTPException(status_code=401, detail="Invalid API key")
 
         if not verify_secret(user_key.secret_hash, key_components[3]):
-            raise HTTPException(status_code=401, detail=f"Invalid API key")
-        
-        encoded_jwt = jwt.encode(
-            {
-                "sub": f"client:{user_key.kid}",
-                "scopes": user_key.scopes,
-                "iss": settings.user_jwt_iss,
-                "aud": settings.user_jwt_aud,
-                "iat": datetime.now(timezone.utc),
-                "nbf": datetime.now(timezone.utc),
-                "exp": datetime.now(timezone.utc) + timedelta(hours=1)             
-            },
-            settings.jwt_private_key,
-            algorithm="RS256"
-        )
+            raise HTTPException(status_code=401, detail="Invalid API key")
 
-    return encoded_jwt
+    return issue_token(sub_type="client", sub=user_key.kid, scopes=user_key.scopes)
+
+
+async def auth_user_login():
+    pass
 
 
 async def verify_jwt(token: str) -> JWTPayload:
@@ -69,7 +95,7 @@ async def verify_jwt(token: str) -> JWTPayload:
                 "verify_nbf": True,
                 "require": ["sub", "exp", "iat", "nbf", "iss", "aud", "scopes"]
             },
-            algorithms=["RS256"]
+            algorithm="RS256"
         )
 
         return JWTPayload(**decoded)

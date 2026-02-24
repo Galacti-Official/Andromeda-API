@@ -13,6 +13,12 @@ class UserCreate(BaseModel):
     password: str
 
 
+class UserCreateResponse(BaseModel):
+    success: bool
+    message: str
+    user: User
+
+
 class UserPublic(SQLModel):
     id: UUID
     name: str
@@ -30,4 +36,4 @@ class UserLoginRequest(BaseModel):
 class UserLoginResponse(BaseModel):
     success: bool
     message: str
-    user: UserPublic
+    user: User
