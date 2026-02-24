@@ -7,11 +7,10 @@ from pydantic import BaseModel
 from Andromeda.models.user import User, UserKey
 
 
-class UserCreate(SQLModel):
+class UserCreate(BaseModel):
     name: str
     email: str
-    password_hash: str
-    last_login: datetime
+    password: str
 
 
 class UserPublic(SQLModel):

@@ -14,7 +14,7 @@ class JWTResponse(BaseModel):
 
 class JWTPayload(BaseModel):
     sub: str
-    scopes: list[str] | None
+    scopes: list[str]
     iss: str
     aud: str
     iat: datetime

@@ -47,7 +47,7 @@ def format_key(prefix: str, type: str, kid: str, secret: str) -> str:
         raise ValueError(f"secret must be 43 characters, got {len(secret)}")
     
     return f"{prefix}_{type}_{kid}_{secret}"
-
+ 
 
 
 async def create_api_key(request: CreateKeyRequest, user: JWTPayload) -> Optional[CreatedKeyResponse]:
@@ -58,6 +58,9 @@ async def create_api_key(request: CreateKeyRequest, user: JWTPayload) -> Optiona
 
     if len(sub_components) != 2 or sub_components[0] not in valid_user_types:
         raise HTTPException(status_code=403, detail="Invalid user type")
+
+    if request.scopes not in user.scopes:
+        raise HTTPException(status_code=403, detail="Missing scopes")
     
     if sub_components[0] == "client":
         client_kid = sub_components[1]
@@ -80,3 +83,9 @@ async def create_api_key(request: CreateKeyRequest, user: JWTPayload) -> Optiona
             await session.refresh(key)
 
             return CreatedKeyResponse(name=request.name, type=request.type, env=request.env, scopes=request.scopes, key=full_key)
+        
+    if  sub_components[1] == "user":
+        pass
+
+    if sub_components[1] == "node":
+        pass
