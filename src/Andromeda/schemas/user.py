@@ -1,7 +1,5 @@
-from sqlmodel import SQLModel
-from typing import List, Optional
-from uuid import UUID, uuid4
-from datetime import datetime, timezone
+from uuid import UUID
+from datetime import datetime
 from pydantic import BaseModel
 
 from Andromeda.models.user import User, UserKey
@@ -16,15 +14,15 @@ class UserCreate(BaseModel):
 class UserCreateResponse(BaseModel):
     success: bool
     message: str
-    user: User
+    user: UserPublic
 
 
-class UserPublic(SQLModel):
+class UserPublic(BaseModel):
     id: UUID
     name: str
     email: str
     avatar: str
-    last_login: datetime
+    last_login: datetime | None
     created_at: datetime
 
 
@@ -36,4 +34,4 @@ class UserLoginRequest(BaseModel):
 class UserLoginResponse(BaseModel):
     success: bool
     message: str
-    user: User
+    user: UserPublic

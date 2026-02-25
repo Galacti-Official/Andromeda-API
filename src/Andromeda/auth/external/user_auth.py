@@ -1,15 +1,14 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException
 from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 import jwt
 
-from Andromeda.auth.hashing import verify_secret
-from Andromeda.api.database.database import engine
-from Andromeda.models.user import UserKey
+from Andromeda.auth.hashing import verify_secret, verify_password
+from Andromeda.api.database.database import engine, get_session
+from Andromeda.models.user import User, UserKey
 from Andromeda.schemas.jwt import JWTPayload
+from Andromeda.schemas.user import UserPublic, UserLoginRequest, UserLoginResponse
 from Andromeda.config import settings
 
 
@@ -47,8 +46,6 @@ async def set_session_cookie(response, sub: str, scopes: list[str]):
     )
 
 
-
-
 async def auth_user_key(key: str):
     key_components = key.split("_")
 
@@ -61,9 +58,9 @@ async def auth_user_key(key: str):
     if key_components[1] != "live":
         raise HTTPException(status_code=401, detail="Invalid API key")
     
-    async with AsyncSession(engine) as session:
+    async with get_session() as session:
         result = await session.exec(select(UserKey).where(UserKey.kid == key_components[2]))
-        user_key = result.first()
+        user_key = result.one_or_none()
 
         if user_key is None:
             raise HTTPException(status_code=401, detail="Invalid API key")
@@ -77,9 +74,29 @@ async def auth_user_key(key: str):
     return issue_token(sub_type="client", sub=user_key.kid, scopes=user_key.scopes)
 
 
-async def auth_user_login():
-    pass
+async def auth_user_login(request: UserLoginRequest) -> UserPublic:
+    async with get_session() as session:
+        result = await session.exec(select(User).where(User.email == request.email))
+        user = result.one_or_none()
 
+        if user is None:
+            raise HTTPException(status_code=401, detail="User with this email does not exist")
+        
+        if not user.is_active:
+            raise HTTPException(status_code=401, detail="This user has been deactivated")
+
+        if not verify_password(user.password_hash, request.password):
+            raise HTTPException(status_code=403, detail="Password incorrect")
+
+        return UserPublic(
+                id=user.id,
+                name=user.name,
+                email=user.email,
+                avatar=user.avatar,
+                last_login=user.last_login,
+                created_at=user.created_at
+            )
+        
 
 async def verify_jwt(token: str) -> JWTPayload:
     try:
