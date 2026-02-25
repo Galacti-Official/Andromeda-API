@@ -71,7 +71,7 @@ async def auth_user_key(key: str):
         if not verify_secret(user_key.secret_hash, key_components[3]):
             raise HTTPException(status_code=401, detail="Invalid API key")
 
-    return issue_token(sub_type="client", sub=user_key.kid, scopes=user_key.scopes)
+    return await issue_token(sub_type="client", sub=user_key.kid, scopes=user_key.scopes)
 
 
 async def auth_user_login(request: UserLoginRequest) -> UserPublic:
