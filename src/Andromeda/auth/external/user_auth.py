@@ -40,7 +40,7 @@ async def set_session_cookie(response, sub: str, scopes: list[str]):
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=settings.production,
+        secure=False,
         samesite="strict",
         max_age=3600,
     )
