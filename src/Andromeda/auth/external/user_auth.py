@@ -34,7 +34,7 @@ async def issue_token(sub_type: str, sub: str, scopes: list[str] | None) -> str:
 
 
 async def set_session_cookie(response, sub: str, scopes: list[str]):
-    token = issue_token("user", sub, scopes)
+    token = await issue_token("user", sub, scopes)
 
     response.set_cookie(
         key=COOKIE_NAME,

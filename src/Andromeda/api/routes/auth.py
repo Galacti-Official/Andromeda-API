@@ -28,4 +28,4 @@ async def login(request: UserLoginRequest, response: Response) -> UserLoginRespo
 async def register(request: UserCreate, response: Response) -> UserCreateResponse:
     user = await create_user(request)
     await set_session_cookie(response, str(user.id), ["basic"])
-    return UserCreateResponse(success=True, message="User created",user=user)
+    return UserCreateResponse(success=True, message="User created", user=user)
