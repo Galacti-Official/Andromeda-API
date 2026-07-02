@@ -152,24 +152,33 @@ async def reset_user_avatar(user: UserPublic, session: AsyncSession) -> UserPubl
     return UserPublic.model_validate(selected_user) 
     
 
-async def change_user_password(request: UserChangePasswordRequest, user: UserPublic, session: AsyncSession) -> UserChangePasswordResponse:
+async def change_user_password(
+    request: UserChangePasswordRequest,
+    user: UserPublic,
+    session: AsyncSession,
+    http_request: Request,
+    redis_client,
+) -> UserChangePasswordResponse:
     result = await session.exec(select(User).where(User.id == user.id))
     selected_user = result.one_or_none()
 
     if selected_user is None:
         raise AndromedaError(404, "not_found", "Selected user not found")
-    
+
     if not selected_user.password_hash:
         raise AndromedaError(400, "bad_request", "Password login is not set up for this account")
 
     if not verify_password(selected_user.password_hash, request.current_password):
         raise AndromedaError(401, "unauthorized", "Invalid password")
-    
+
     selected_user.password_hash = hash_password(request.new_password)
 
     session.add(selected_user)
     await session.commit()
-    
+
+    current_session_id = http_request.cookies.get(COOKIE_NAME)
+    await revoke_all_sessions(user, redis_client, except_session_id=current_session_id)
+
     return UserChangePasswordResponse(message="Password changed successfully")
 
 
@@ -198,6 +207,8 @@ async def get_user_sessions(user: UserPublic, request: Request, redis_client) ->
             )
 
             sessions.append(session)
+        else:
+            await redis_client.srem(f"user_sessions:{user.id}", session_id)
 
     return UserSessions(sessions=sessions)
 

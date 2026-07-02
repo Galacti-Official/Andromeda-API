@@ -62,10 +62,11 @@ async def reset_avatar(
 @router.post("/me/security/change-password", response_model=UserChangePasswordResponse)
 async def change_password(
     change_password_request: UserChangePasswordRequest,
+    request: Request,
     user: UserPublic = Depends(get_session_user),
     session: AsyncSession = Depends(get_session)
 ) -> UserChangePasswordResponse:
-    return await change_user_password(change_password_request, user, session)
+    return await change_user_password(change_password_request, user, session, request, redis_client)
 
 
 @router.get("/me/security/sessions")

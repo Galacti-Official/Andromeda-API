@@ -1,5 +1,6 @@
 import json, jwt, secrets
 from datetime import datetime, timedelta, timezone
+from redis.exceptions import WatchError
 
 from fastapi import Request, Response
 from sqlmodel import select
@@ -33,7 +34,6 @@ async def set_session_cookie(request: Request, response: Response, user: UserPub
     )
 
     await redis_client.sadd(f"user_sessions:{user.id}", session_id)
-    await redis_client.expire(f"user_sessions:{user.id}", 86400)
 
     response.set_cookie(
         key=COOKIE_NAME,
@@ -55,7 +55,11 @@ async def revoke_session(request: Request, response: Response, redis_client):
             data = json.loads(raw)
             await redis_client.srem(f"user_sessions:{data['user_id']}", session_id)
         await redis_client.delete(f"session:{session_id}")
-    response.delete_cookie(COOKIE_NAME)
+    response.delete_cookie(
+        COOKIE_NAME,
+        path="/",
+        domain=".galacti.org" if settings.production else None,
+    )
 
 
 async def revoke_specific_session(session_id: str, user: UserPublic, redis_client):
@@ -67,11 +71,24 @@ async def revoke_specific_session(session_id: str, user: UserPublic, redis_clien
     await redis_client.delete(f"session:{session_id}")
 
 
-async def revoke_all_sessions(user: UserPublic, redis_client):
-    session_ids = await redis_client.smembers(f"user_sessions:{user.id}")
-    for session_id in session_ids:
-        await redis_client.delete(f"session:{session_id}")
-    await redis_client.delete(f"user_sessions:{user.id}")
+async def revoke_all_sessions(user: UserPublic, redis_client, except_session_id: str | None = None):
+    key = f"user_sessions:{user.id}"
+
+    async with redis_client.pipeline(transaction=True) as pipe:
+        while True:
+            try:
+                await pipe.watch(key)
+                session_ids = await redis_client.smembers(key)
+                session_ids.discard(except_session_id)
+
+                pipe.multi()
+                for session_id in session_ids:
+                    pipe.delete(f"session:{session_id}")
+                    pipe.srem(key, session_id)
+                await pipe.execute()
+                break
+            except WatchError:
+                continue
 
 
 async def auth_user_login(request: UserLoginRequest, session: AsyncSession) -> UserPublic:

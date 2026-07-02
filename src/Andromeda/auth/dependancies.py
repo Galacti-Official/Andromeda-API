@@ -1,7 +1,7 @@
 import asyncio, json
 
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Request, Response, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -20,6 +20,7 @@ from Andromeda.config import settings
 
 
 COOKIE_NAME = "session"
+MAX_SESSION_AGE = timedelta(days=30)
 security = HTTPBearer(auto_error=False)
 
 
@@ -40,10 +41,16 @@ async def get_session_user(
     
     data = json.loads(raw)
     user_id = UUID(data["user_id"])
-    
+
     if not user_id:
         raise AndromedaError(401, "unauthorized", "Not authenticated")
-    
+
+    created_at = datetime.fromisoformat(data["created_at"])
+    if datetime.now(timezone.utc) - created_at > MAX_SESSION_AGE:
+        await redis_client.delete(f"session:{session_id}")
+        await redis_client.srem(f"user_sessions:{user_id}", session_id) # type: ignore
+        raise AndromedaError(401, "unauthorized", "Not authenticated")
+
     result = await session.exec(select(User).where(User.id == user_id))
     user = result.one_or_none()
     
@@ -59,7 +66,9 @@ async def get_session_user(
         value=session_id,
         httponly=True,
         secure=not settings.debug,
-        samesite="strict",
+        samesite="lax",
+        path="/",
+        domain=".galacti.org" if settings.production else None,
         max_age=86400
     )
 
