@@ -1,3 +1,4 @@
+import io
 import json
 import uuid
 import user_agents as ua
@@ -5,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Request, UploadFile
+from PIL import Image, ImageOps
 from sqlmodel import select
 from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -24,6 +26,22 @@ from Andromeda.config import settings
 
 COOKIE_NAME = "session"
 MAX_AVATAR_SIZE = 5 * 1024 * 1024
+AVATAR_CDN_PREFIX = "https://cdn.galacti.org/avatars/"
+DEFAULT_AVATAR_URL = f"{AVATAR_CDN_PREFIX}default.png"
+
+
+def _delete_avatar_file_if_owned(avatar_url: str) -> None:
+    if not avatar_url.startswith(AVATAR_CDN_PREFIX) or avatar_url == DEFAULT_AVATAR_URL:
+        return
+
+    file_name = Path(avatar_url[len(AVATAR_CDN_PREFIX):]).name
+    if not file_name:
+        return
+
+    try:
+        (Path(settings.avatar_dir) / file_name).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 async def create_user(request: UserCreate, session: AsyncSession, redis_client) -> UserPublic:
@@ -74,7 +92,12 @@ async def delete_user(user: UserPublic, session: AsyncSession, redis_client) -> 
     result = await session.exec(select(User).where(User.id == user.id))
     selected_user = result.one_or_none()
 
+    if selected_user is None:
+        raise AndromedaError(404, "not_found", "Selected user not found")
+
     await revoke_all_sessions(user, redis_client)
+
+    _delete_avatar_file_if_owned(selected_user.avatar)
 
     await session.delete(selected_user)
     await session.commit()
@@ -110,28 +133,39 @@ async def set_user_avatar(avatar: UploadFile, user: UserPublic, session: AsyncSe
     if selected_user is None:
         raise AndromedaError(404, "not_found", "Selected user not found") 
     
-    ext = Path(avatar.filename).suffix
-    file_name = f"{uuid.uuid4().hex}{ext}"
-    save_path = Path(settings.avatar_dir) / file_name
-
-    total = 0
+    data = bytearray()
     try:
-        with save_path.open("wb") as buffer:
-            while chunk := await avatar.read(1024 * 1024): # 1 MB chunk size
-                total += len(chunk)
-                if total > MAX_AVATAR_SIZE:
-                    buffer.close()
-                    save_path.unlink()
-                    raise AndromedaError(413, "content_too_large", f"File too large, max size {MAX_AVATAR_SIZE} bytes.")
-                buffer.write(chunk)
+        while chunk := await avatar.read(1024 * 1024): # 1 MB chunk size
+            data.extend(chunk)
+            if len(data) > MAX_AVATAR_SIZE:
+                raise AndromedaError(413, "content_too_large", f"File too large, max size {MAX_AVATAR_SIZE} bytes.")
     finally:
         await avatar.close()
 
-    selected_user.avatar = f"https://cdn.galacti.org/avatars/{file_name}"
+    try:
+        Image.open(io.BytesIO(data)).verify()
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:
+        raise AndromedaError(400, "bad_request", "File is not a valid image")
+
+    if img.width * img.height > 25_000_000:
+        raise AndromedaError(400, "bad_request", "Image resolution too large")
+
+    img = ImageOps.fit(ImageOps.exif_transpose(img).convert("RGB"), (512, 512))
+
+    file_name = f"{uuid.uuid4().hex}.jpg"
+    save_path = Path(settings.avatar_dir) / file_name
+    img.save(save_path, "JPEG", quality=90)
+
+    old_avatar = selected_user.avatar
+    selected_user.avatar = f"{AVATAR_CDN_PREFIX}{file_name}"
 
     session.add(selected_user)
     await session.commit()
     await session.refresh(selected_user)
+
+    _delete_avatar_file_if_owned(old_avatar)
 
     return UserPublic.model_validate(selected_user)
 
@@ -143,13 +177,16 @@ async def reset_user_avatar(user: UserPublic, session: AsyncSession) -> UserPubl
     if selected_user is None:
         raise AndromedaError(404, "not_found", "Selected user not found")
 
-    selected_user.avatar = "https://cdn.galacti.org/avatars/default.png"
+    old_avatar = selected_user.avatar
+    selected_user.avatar = DEFAULT_AVATAR_URL
 
     session.add(selected_user)
     await session.commit()
     await session.refresh(selected_user)
 
-    return UserPublic.model_validate(selected_user) 
+    _delete_avatar_file_if_owned(old_avatar)
+
+    return UserPublic.model_validate(selected_user)
     
 
 async def change_user_password(

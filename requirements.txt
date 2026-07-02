@@ -35,6 +35,7 @@ mdurl==0.1.2
 packaging==26.0
 passlib==1.7.4
 pipreqs==0.4.13
+Pillow==12.0.0
 pluggy==1.6.0
 prometheus-fastapi-instrumentator==7.1.0
 prometheus_client==0.24.1
