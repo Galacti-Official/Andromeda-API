@@ -15,12 +15,13 @@ from Andromeda.auth.external.user_auth import revoke_all_sessions
 from Andromeda.models.user import User
 
 from Andromeda.schemas.user import UserCreate, UserPublic, UserEditRequest, UserChangePasswordRequest,  UserChangePasswordResponse, UserSession, UserSessions
+from Andromeda.services.email_service import send_verification_email, consume_verification_token
 
 
 COOKIE_NAME = "session"
 
 
-async def create_user(request: UserCreate, session: AsyncSession) -> UserPublic:
+async def create_user(request: UserCreate, session: AsyncSession, redis_client) -> UserPublic:
     user = User(
         name = request.name,
         email = request.email,
@@ -33,16 +34,35 @@ async def create_user(request: UserCreate, session: AsyncSession) -> UserPublic:
     try:
         await session.commit()
         await session.refresh(user)
-        return UserPublic(
-            id=user.id,
-            name=user.name,
-            email=user.email,
-            avatar=user.avatar,
-            last_login=user.last_login,
-            created_at=user.created_at
-        )
     except IntegrityError:
         raise AndromedaError(409, "conflict", "A user with this username or email already exists")
+
+    await send_verification_email(str(user.id), user.email, redis_client)
+
+    return UserPublic.model_validate(user)
+
+
+async def verify_user_email(token: str, session: AsyncSession, redis_client) -> None:
+    user_id = await consume_verification_token(token, redis_client)
+    if not user_id:
+        raise AndromedaError(400, "bad_request", "Invalid or expired verification token")
+
+    result = await session.exec(select(User).where(User.id == user_id))
+    user = result.one_or_none()
+
+    if not user:
+        raise AndromedaError(404, "not_found", "User not found")
+
+    if user.email_verified:
+        return
+
+    user.email_verified = True
+    session.add(user)
+    await session.commit()
+
+
+async def request_verification_email(user: UserPublic, redis_client) -> None:
+    await send_verification_email(str(user.id), user.email, redis_client)
     
 
 async def delete_user(user: UserPublic, session: AsyncSession, redis_client) -> None:
@@ -129,7 +149,4 @@ async def get_user_data(user: UserPublic, session: AsyncSession) -> UserPublic:
     if not user_data:
         raise AndromedaError(404, "not_found", "Selected user not found")
 
-    return UserPublic(
-        id=user_data.id, name=user_data.name, email=user_data.email,
-        avatar=user_data.avatar, last_login=user_data.last_login, created_at=user_data.created_at
-    )
+    return UserPublic.model_validate(user_data)

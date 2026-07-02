@@ -60,9 +60,12 @@ async def auth_user_google(code: str, session: AsyncSession) -> UserPublic:
     info = await _get_google_user_info(access_token)
 
     google_id: str = info["sub"]
-    email: str = info.get("email", "")
+    email: str = info.get("email", "") if info.get("email_verified") else ""
     name: str = info.get("name", email.split("@")[0])
     avatar: str = info.get("picture", "https://cdn.galacti.org/avatars/default.png")
+
+    if not email:
+        raise AndromedaError(400, "bad_request", "A verified email address is required to sign in with Google")
 
     result = await session.exec(select(User).where(User.google_id == google_id))
     user = result.one_or_none()
