@@ -29,5 +29,6 @@ class Settings(BaseSettings):
     frontend_url: str
     resend_api_key: str = ""
     resend_from_email: str = "noreply@galacti.org"
+    avatar_dir: str
 
 settings = Settings()  # type: ignore

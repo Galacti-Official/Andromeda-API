@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, UploadFile, File, Request, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from Andromeda.auth.dependancies import get_session_user
@@ -9,7 +9,10 @@ from Andromeda.api.database.database import get_session
 
 from Andromeda.schemas.user import UserPublic, UserEditRequest, UserChangePasswordRequest, UserChangePasswordResponse, UserSessions
 
-from Andromeda.services.user_service import get_user_data, delete_user, edit_user, change_user_password, get_user_sessions
+from Andromeda.services.user_service import (
+    get_user_data, delete_user, edit_user, change_user_password, get_user_sessions,
+    set_user_avatar, reset_user_avatar
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -37,6 +40,23 @@ async def delete_me(
     session: AsyncSession = Depends(get_session)
 ) -> None:
     await delete_user(user, session, redis_client)
+
+
+@router.post("/me/avatar", response_model=UserPublic)
+async def upload_avatar(
+    avatar: UploadFile = File(),
+    user: UserPublic = Depends(get_session_user),
+    session: AsyncSession = Depends(get_session)
+) -> UserPublic:
+    return await set_user_avatar(avatar, user, session)
+
+
+@router.delete("/me/avatar", response_model=UserPublic)
+async def reset_avatar(
+    user: UserPublic = Depends(get_session_user),
+    session: AsyncSession = Depends(get_session)
+) -> UserPublic:
+    return await reset_user_avatar(user, session)
 
 
 @router.post("/me/security/change-password", response_model=UserChangePasswordResponse)

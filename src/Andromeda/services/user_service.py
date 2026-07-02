@@ -1,8 +1,10 @@
 import json
+import uuid
 import user_agents as ua
 from datetime import datetime, timezone
+from pathlib import Path
 
-from fastapi import Request
+from fastapi import Request, UploadFile
 from sqlmodel import select
 from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -17,8 +19,11 @@ from Andromeda.models.user import User
 from Andromeda.schemas.user import UserCreate, UserPublic, UserEditRequest, UserChangePasswordRequest,  UserChangePasswordResponse, UserSession, UserSessions
 from Andromeda.services.email_service import send_verification_email, consume_verification_token
 
+from Andromeda.config import settings
+
 
 COOKIE_NAME = "session"
+MAX_AVATAR_SIZE = 5 * 1024 * 1024
 
 
 async def create_user(request: UserCreate, session: AsyncSession, redis_client) -> UserPublic:
@@ -91,6 +96,61 @@ async def edit_user(request: UserEditRequest, user: UserPublic, session: AsyncSe
 
     return UserPublic.model_validate(selected_user)
 
+
+async def set_user_avatar(avatar: UploadFile, user: UserPublic, session: AsyncSession) -> UserPublic:
+    if not avatar.filename:
+        raise AndromedaError(400, "bad_request", "No file selected")
+
+    if avatar.size and avatar.size > MAX_AVATAR_SIZE:
+        raise AndromedaError(413, "content_too_large", f"File too large, max size {MAX_AVATAR_SIZE} bytes.")
+    
+    result = await session.exec(select(User).where(User.id == user.id))
+    selected_user = result.one_or_none()
+
+    if selected_user is None:
+        raise AndromedaError(404, "not_found", "Selected user not found") 
+    
+    ext = Path(avatar.filename).suffix
+    file_name = f"{uuid.uuid4().hex}{ext}"
+    save_path = Path(settings.avatar_dir) / file_name
+
+    total = 0
+    try:
+        with save_path.open("wb") as buffer:
+            while chunk := await avatar.read(1024 * 1024): # 1 MB chunk size
+                total += len(chunk)
+                if total > MAX_AVATAR_SIZE:
+                    buffer.close()
+                    save_path.unlink()
+                    raise AndromedaError(413, "content_too_large", f"File too large, max size {MAX_AVATAR_SIZE} bytes.")
+                buffer.write(chunk)
+    finally:
+        await avatar.close()
+
+    selected_user.avatar = f"https://cdn.galacti.org/avatars/{file_name}"
+
+    session.add(selected_user)
+    await session.commit()
+    await session.refresh(selected_user)
+
+    return UserPublic.model_validate(selected_user)
+
+
+async def reset_user_avatar(user: UserPublic, session: AsyncSession) -> UserPublic:
+    result = await session.exec(select(User).where(User.id == user.id))
+    selected_user = result.one_or_none()
+
+    if selected_user is None:
+        raise AndromedaError(404, "not_found", "Selected user not found")
+
+    selected_user.avatar = "https://cdn.galacti.org/avatars/default.png"
+
+    session.add(selected_user)
+    await session.commit()
+    await session.refresh(selected_user)
+
+    return UserPublic.model_validate(selected_user) 
+    
 
 async def change_user_password(request: UserChangePasswordRequest, user: UserPublic, session: AsyncSession) -> UserChangePasswordResponse:
     result = await session.exec(select(User).where(User.id == user.id))
