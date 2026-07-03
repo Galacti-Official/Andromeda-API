@@ -7,6 +7,7 @@ from fastapi import UploadFile
 from PIL import Image
 
 from Andromeda.api.errors import AndromedaError
+from Andromeda.api.routes.users import MAX_UPLOAD_BYTES, enforce_upload_size
 from Andromeda.models.user import User
 from Andromeda.schemas.user import UserPublic
 from Andromeda.services import user_service
@@ -170,6 +171,25 @@ async def test_ignores_client_supplied_extension():
 
     assert ".html" not in result.avatar
     assert result.avatar.endswith(".jpg")
+
+
+# ---------------------------------------------------------------------------
+# pre-parse Content-Length guard
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content_length", [None, 0, -1, MAX_UPLOAD_BYTES + 1])
+async def test_enforce_upload_size_rejects_bad_content_length(content_length):
+    with pytest.raises(AndromedaError) as exc_info:
+        await enforce_upload_size(content_length)
+
+    assert exc_info.value.status_code == 413
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content_length", [1, MAX_UPLOAD_BYTES])
+async def test_enforce_upload_size_allows_valid_content_length(content_length):
+    await enforce_upload_size(content_length)
 
 
 # ---------------------------------------------------------------------------

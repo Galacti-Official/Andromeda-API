@@ -7,6 +7,11 @@ import pytest
 
 fake_database_module = types.ModuleType("Andromeda.api.database.database")
 setattr(fake_database_module, "engine", object())
+
+async def _fake_get_session():
+    yield None
+
+setattr(fake_database_module, "get_session", _fake_get_session)
 sys.modules.setdefault("Andromeda.api.database.database", fake_database_module)
 
 from Andromeda.models.status import (

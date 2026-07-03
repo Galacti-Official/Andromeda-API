@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from PIL import Image, ImageOps
 from sqlmodel import select
 from sqlalchemy.exc import IntegrityError
@@ -26,8 +27,25 @@ from Andromeda.config import settings
 
 COOKIE_NAME = "session"
 MAX_AVATAR_SIZE = 5 * 1024 * 1024
-AVATAR_CDN_PREFIX = "https://cdn.galacti.org/avatars/"
-DEFAULT_AVATAR_URL = f"{AVATAR_CDN_PREFIX}default.png"
+AVATAR_CDN_PREFIX = settings.avatar_cdn_prefix
+DEFAULT_AVATAR_URL = settings.default_avatar_url
+
+
+def _process_and_save_avatar(data: bytes, save_path: Path) -> None:
+    try:
+        Image.open(io.BytesIO(data)).verify()
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:
+        raise AndromedaError(400, "bad_request", "File is not a valid image")
+
+    if img.width * img.height > 25_000_000:
+        raise AndromedaError(400, "bad_request", "Image resolution too large")
+
+    img = ImageOps.fit(ImageOps.exif_transpose(img).convert("RGB"), (512, 512))
+
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(save_path, "JPEG", quality=90)
 
 
 def _delete_avatar_file_if_owned(avatar_url: str) -> None:
@@ -142,21 +160,9 @@ async def set_user_avatar(avatar: UploadFile, user: UserPublic, session: AsyncSe
     finally:
         await avatar.close()
 
-    try:
-        Image.open(io.BytesIO(data)).verify()
-        img = Image.open(io.BytesIO(data))
-        img.load()
-    except Exception:
-        raise AndromedaError(400, "bad_request", "File is not a valid image")
-
-    if img.width * img.height > 25_000_000:
-        raise AndromedaError(400, "bad_request", "Image resolution too large")
-
-    img = ImageOps.fit(ImageOps.exif_transpose(img).convert("RGB"), (512, 512))
-
     file_name = f"{uuid.uuid4().hex}.jpg"
     save_path = Path(settings.avatar_dir) / file_name
-    img.save(save_path, "JPEG", quality=90)
+    await run_in_threadpool(_process_and_save_avatar, bytes(data), save_path)
 
     old_avatar = selected_user.avatar
     selected_user.avatar = f"{AVATAR_CDN_PREFIX}{file_name}"

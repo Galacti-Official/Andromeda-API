@@ -1,5 +1,7 @@
-from fastapi import APIRouter, UploadFile, File, Request, Depends
+from fastapi import APIRouter, UploadFile, File, Header, Request, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+from Andromeda.api.errors import AndromedaError
 
 from Andromeda.auth.dependancies import get_session_user
 from Andromeda.auth.external.user_auth import revoke_specific_session, revoke_all_sessions
@@ -15,6 +17,13 @@ from Andromeda.services.user_service import (
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+MAX_UPLOAD_BYTES = 6 * 1024 * 1024  # multipart overhead on top of the 5MB avatar cap
+
+
+async def enforce_upload_size(content_length: int | None = Header(default=None)) -> None:
+    if content_length is None or content_length <= 0 or content_length > MAX_UPLOAD_BYTES:
+        raise AndromedaError(413, "content_too_large", "Request body too large")
 
 
 @router.get("/me", response_model=UserPublic)
@@ -42,7 +51,7 @@ async def delete_me(
     await delete_user(user, session, redis_client)
 
 
-@router.post("/me/avatar", response_model=UserPublic)
+@router.post("/me/avatar", response_model=UserPublic, dependencies=[Depends(enforce_upload_size)])
 async def upload_avatar(
     avatar: UploadFile = File(),
     user: UserPublic = Depends(get_session_user),

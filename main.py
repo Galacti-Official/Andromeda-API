@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -61,6 +62,7 @@ def parse_trusted_proxies(raw: str) -> set[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    Path(settings.avatar_dir).mkdir(parents=True, exist_ok=True)
     await init_db()
     await redis_client.ping() # type: ignore
     await seed_services()

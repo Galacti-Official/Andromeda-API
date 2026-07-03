@@ -3,6 +3,8 @@ from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
 
+from Andromeda.config import settings
+
 
 class User(SQLModel, table=True):
     __tablename__ = "users" # type: ignore
@@ -23,7 +25,7 @@ class User(SQLModel, table=True):
 
     keys: list["UserKey"] = Relationship(back_populates="user", cascade_delete=True)
 
-    avatar: str = Field(default="https://cdn.galacti.org/avatars/default.png")
+    avatar: str = Field(default_factory=lambda: settings.default_avatar_url)
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

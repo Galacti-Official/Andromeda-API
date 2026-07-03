@@ -30,5 +30,10 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_email: str = "noreply@galacti.org"
     avatar_dir: str
+    avatar_cdn_prefix: str = "https://cdn.galacti.org/avatars/"
+
+    @property
+    def default_avatar_url(self) -> str:
+        return f"{self.avatar_cdn_prefix}default.png"
 
 settings = Settings()  # type: ignore
