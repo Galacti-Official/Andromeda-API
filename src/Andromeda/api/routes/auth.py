@@ -37,7 +37,7 @@ async def login(
     login_request: UserLoginRequest,
     session: AsyncSession = Depends(get_session)
 ) -> UserLoginResponse:
-    user = await auth_user_login(login_request, session=session)
+    user = await auth_user_login(login_request, session=session, redis_client=redis_client)
     await set_session_cookie(request, response, user, redis_client)
     return UserLoginResponse(success=True, message="User login successful", user=user)
 
@@ -82,8 +82,10 @@ async def logout(
 
 @router.get("/github/login")
 async def github_login() -> RedirectResponse:
-    state = await generate_oauth_state(redis_client)
-    return RedirectResponse(url=build_github_authorize_url(state))
+    redirect = RedirectResponse(url="")
+    state = await generate_oauth_state(redirect, redis_client)
+    redirect.headers["location"] = build_github_authorize_url(state)
+    return redirect
 
 
 @router.get("/github/callback")
@@ -93,17 +95,19 @@ async def github_callback(
     state: str,
     session: AsyncSession = Depends(get_session)
 ) -> RedirectResponse:
-    await validate_oauth_state(state, redis_client)
-    user = await auth_user_github(code, session)
     redirect = RedirectResponse(url=settings.frontend_url)
+    await validate_oauth_state(request, redirect, state, redis_client)
+    user = await auth_user_github(code, session)
     await set_session_cookie(request, redirect, user, redis_client)
     return redirect
 
 
 @router.get("/google/login")
 async def google_login() -> RedirectResponse:
-    state = await generate_oauth_state(redis_client)
-    return RedirectResponse(url=build_google_authorize_url(state))
+    redirect = RedirectResponse(url="")
+    state = await generate_oauth_state(redirect, redis_client)
+    redirect.headers["location"] = build_google_authorize_url(state)
+    return redirect
 
 
 @router.get("/google/callback")
@@ -113,8 +117,8 @@ async def google_callback(
     state: str,
     session: AsyncSession = Depends(get_session)
 ) -> RedirectResponse:
-    await validate_oauth_state(state, redis_client)
-    user = await auth_user_google(code, session)
     redirect = RedirectResponse(url=settings.frontend_url)
+    await validate_oauth_state(request, redirect, state, redis_client)
+    user = await auth_user_google(code, session)
     await set_session_cookie(request, redirect, user, redis_client)
     return redirect

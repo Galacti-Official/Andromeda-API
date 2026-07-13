@@ -54,15 +54,17 @@ async def _get_github_user_info(access_token: str) -> dict:
             raise AndromedaError(401, "unauthorized", "Failed to retrieve GitHub user info")
         info = user_resp.json()
 
-        # GitHub may not expose email on /user if the user set it to private
-        if not info.get("email"):
-            emails_resp = await client.get(_GITHUB_EMAILS_URL, headers=headers)
-            if emails_resp.status_code == 200:
-                primary = next(
-                    (e["email"] for e in emails_resp.json() if e.get("primary") and e.get("verified")),
-                    None,
-                )
-                info["email"] = primary
+        # The /user "email" field is the user-chosen public profile email and is not
+        # guaranteed to be verified; accounts get linked by this address, so only a
+        # verified primary email from /user/emails may be trusted.
+        info["email"] = None
+        emails_resp = await client.get(_GITHUB_EMAILS_URL, headers=headers)
+        if emails_resp.status_code == 200:
+            primary = next(
+                (e["email"] for e in emails_resp.json() if e.get("primary") and e.get("verified")),
+                None,
+            )
+            info["email"] = primary
 
     return info
 

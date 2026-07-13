@@ -3,7 +3,6 @@ import base64
 import shortuuid
 
 from datetime import datetime, timezone
-from uuid import UUID
 
 from sqlmodel import select, col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -21,12 +20,23 @@ from Andromeda.schemas.key import (
     CreateKeyRequest, CreatedKeyResponse, DeletedKeyResponse, ActivatedKeyResponse, DeactivatedKeyResponse,
     KeyPublic, KeyListResponse, KeySpecific, EditKeyRequest
 )
-from Andromeda.schemas.jwt import JWTPayload
 
 
 valid_user_types = ["user", "client"]
 valid_type_prefixes = ["sk", "nk", "wk", "mk", "fk"]
 valid_env_types = ["live", "test"]
+valid_scopes = {"labs:read", "labs:write", "labs:run", "labs:delete", "labs:data", "user:read", "user:write"}
+
+
+def _validate_scopes(scopes: list[str] | None) -> None:
+    if not scopes:
+        return
+    invalid = set(scopes) - valid_scopes
+    if invalid:
+        raise AndromedaError(
+            400, "bad_request",
+            f"Invalid scopes: {', '.join(sorted(invalid))}. Valid scopes: {', '.join(sorted(valid_scopes))}"
+        )
 
 
 # Utils
@@ -53,16 +63,6 @@ def _format_key(prefix: str, env: str, kid: str, secret: str) -> str:
         raise ValueError(f"secret must be 43 characters, got {len(secret)}")
     
     return f"{prefix}_{env}_{kid}_{secret}"
-
-
-def get_user_id(user: JWTPayload | UserPublic) -> UUID | str:
-    if isinstance(user, UserPublic):
-        return user.id
-    
-    sub_components = user.sub.split(":")
-    if len(sub_components) != 2:
-        raise AndromedaError(400, "bad_request", "Invalid request")
-    return str(sub_components[1])
 
 
 async def increment_usage(kid: str):
@@ -98,6 +98,14 @@ async def flush_daily_usage(session: AsyncSession):
  
 
 async def create_api_key(request: CreateKeyRequest, user: UserPublic, session: AsyncSession) -> CreatedKeyResponse:
+    _validate_scopes(request.scopes)
+
+    if request.type not in valid_type_prefixes:
+        raise AndromedaError(400, "bad_request", f"Invalid key type, use one of {valid_type_prefixes}")
+
+    if request.env not in valid_env_types:
+        raise AndromedaError(400, "bad_request", f"Invalid key environment, use one of {valid_env_types}")
+
     result = await session.exec(select(User).where(User.id == user.id))
             
     selected_user = result.one_or_none()
@@ -225,6 +233,8 @@ async def deactivate_api_key(kid: str, user: UserPublic, session: AsyncSession) 
 
 
 async def edit_api_key(kid: str, user: UserPublic, request: EditKeyRequest, session: AsyncSession) -> KeySpecific:
+    _validate_scopes(request.scopes)
+
     result = await session.exec(select(UserKey).where(UserKey.user_id == user.id, UserKey.kid == kid))
 
     selected_key = result.one_or_none()

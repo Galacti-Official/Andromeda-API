@@ -12,9 +12,9 @@ from Andromeda.auth.external.user_auth import verify_jwt
 from Andromeda.api.errors import AndromedaError
 from Andromeda.api.database.redis import redis_client
 from Andromeda.api.database.database import get_session
-from Andromeda.models.user import User
+from Andromeda.models.user import User, UserKey
 from Andromeda.schemas.user import UserPublic
-from Andromeda.schemas.jwt import JWTPayload
+from Andromeda.schemas.auth import AuthContext
 from Andromeda.services.api_key_service import increment_usage
 from Andromeda.config import settings
 
@@ -22,6 +22,7 @@ from Andromeda.config import settings
 COOKIE_NAME = "session"
 MAX_SESSION_AGE = timedelta(days=30)
 security = HTTPBearer(auto_error=False)
+_background_tasks: set[asyncio.Task] = set()
 
 
 async def get_session_user(
@@ -75,24 +76,51 @@ async def get_session_user(
     return UserPublic.model_validate(user)
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security)
-) -> JWTPayload:
-    if not credentials:
-        raise AndromedaError(401, "unauthorized", "Not authenticated")
-    
-    user = verify_jwt(credentials.credentials)
-
-    sub_components = user.sub.split(":")
-    if sub_components[0] == "client":
-        asyncio.create_task(increment_usage(sub_components[1]))
-
-    return user
+def _track_usage(kid: str) -> None:
+    task = asyncio.create_task(increment_usage(kid))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
-def require_scope(scope: str):
-    def check_scope(user: JWTPayload = Depends(get_current_user)) -> JWTPayload:
-        if user.scopes is None or scope not in user.scopes:
+async def get_auth_context(
+    request: Request,
+    response: Response,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    session: AsyncSession = Depends(get_session),
+) -> AuthContext:
+    if credentials:
+        payload = verify_jwt(credentials.credentials)
+
+        sub_type, _, kid = payload.sub.partition(":")
+        if sub_type != "client" or not kid:
+            raise AndromedaError(401, "unauthorized", "Not authenticated")
+
+        result = await session.exec(select(UserKey).where(UserKey.kid == kid))
+        key = result.one_or_none()
+        if key is None or not key.is_active:
+            raise AndromedaError(401, "unauthorized", "Not authenticated")
+
+        user = await session.get(User, key.user_id)
+        if user is None or not user.is_active:
+            raise AndromedaError(401, "unauthorized", "Not authenticated")
+
+        _track_usage(kid)
+
+        return AuthContext(
+            user=UserPublic.model_validate(user),
+            scopes=set(payload.scopes or []),
+            via="api_key",
+            kid=kid,
+        )
+
+    user = await get_session_user(request, response, session)
+    return AuthContext(user=user, scopes=None, via="session")
+
+
+def require_scopes(scopes: list[str]):
+    def check_scopes(ctx: AuthContext = Depends(get_auth_context)) -> AuthContext:
+        # Session users are unrestricted; API keys must hold every listed scope.
+        if ctx.scopes is not None and not set(scopes) <= ctx.scopes:
             raise AndromedaError(403, "forbidden", "Insufficient permissions")
-        return user
-    return check_scope
+        return ctx
+    return check_scopes

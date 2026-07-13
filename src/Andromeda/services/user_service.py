@@ -15,7 +15,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from Andromeda.api.errors import AndromedaError
 
 from Andromeda.auth.hashing import hash_password, verify_password
-from Andromeda.auth.external.user_auth import revoke_all_sessions
+from Andromeda.auth.external.user_auth import revoke_all_sessions, session_public_id
 
 from Andromeda.models.user import User
 
@@ -27,6 +27,7 @@ from Andromeda.config import settings
 
 COOKIE_NAME = "session"
 MAX_AVATAR_SIZE = 5 * 1024 * 1024
+VERIFICATION_EMAIL_COOLDOWN = 60  # seconds
 AVATAR_CDN_PREFIX = settings.avatar_cdn_prefix
 DEFAULT_AVATAR_URL = settings.default_avatar_url
 
@@ -103,6 +104,16 @@ async def verify_user_email(token: str, session: AsyncSession, redis_client) -> 
 
 
 async def request_verification_email(user: UserPublic, redis_client) -> None:
+    if user.email_verified:
+        raise AndromedaError(400, "bad_request", "Email is already verified")
+
+    # SET NX doubles as an atomic cooldown check to prevent email flooding.
+    allowed = await redis_client.set(
+        f"email_verify_cooldown:{user.id}", "1", nx=True, ex=VERIFICATION_EMAIL_COOLDOWN
+    )
+    if not allowed:
+        raise AndromedaError(429, "too_many_requests", "Verification email was sent recently, try again later")
+
     await send_verification_email(str(user.id), user.email, redis_client)
     
 
@@ -239,8 +250,10 @@ async def get_user_sessions(user: UserPublic, request: Request, redis_client) ->
 
             user_agent = ua.parse(data["user_agent"])
 
+            # Only a derived id leaves the server; the raw session id is a
+            # bearer token equivalent to the cookie itself.
             session = UserSession(
-                session_id=session_id,
+                session_id=session_public_id(session_id),
                 is_current_session=True if session_id == current_session_id else False,
                 created_at=data["created_at"],
                 last_used_at=data["last_used_at"],

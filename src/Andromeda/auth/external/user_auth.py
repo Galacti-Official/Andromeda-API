@@ -1,4 +1,4 @@
-import json, jwt, secrets
+import hashlib, json, jwt, secrets
 from datetime import datetime, timedelta, timezone
 from redis.exceptions import WatchError
 
@@ -15,6 +15,15 @@ from Andromeda.config import settings
 
 
 COOKIE_NAME = "session"
+
+LOGIN_ATTEMPT_LIMIT = 5
+LOGIN_ATTEMPT_WINDOW = 900  # seconds
+
+
+def session_public_id(session_id: str) -> str:
+    """Opaque identifier safe to return to clients; the raw session id is a
+    usable bearer token and must never leave the cookie."""
+    return hashlib.sha256(session_id.encode()).hexdigest()[:32]
 
 
 async def set_session_cookie(request: Request, response: Response, user: UserPublic, redis_client):
@@ -62,9 +71,13 @@ async def revoke_session(request: Request, response: Response, redis_client):
     )
 
 
-async def revoke_specific_session(session_id: str, user: UserPublic, redis_client):
-    is_owner = await redis_client.sismember(f"user_sessions:{user.id}", session_id)
-    if not is_owner:
+async def revoke_specific_session(public_id: str, user: UserPublic, redis_client):
+    session_ids = await redis_client.smembers(f"user_sessions:{user.id}")
+    session_id = next(
+        (sid for sid in session_ids if session_public_id(sid) == public_id),
+        None,
+    )
+    if session_id is None:
         raise AndromedaError(404, "not_found", "Session not found")
 
     await redis_client.srem(f"user_sessions:{user.id}", session_id)
@@ -91,7 +104,13 @@ async def revoke_all_sessions(user: UserPublic, redis_client, except_session_id:
                 continue
 
 
-async def auth_user_login(request: UserLoginRequest, session: AsyncSession) -> UserPublic:
+async def auth_user_login(request: UserLoginRequest, session: AsyncSession, redis_client) -> UserPublic:
+    attempts_key = f"login_attempts:{request.email.strip().lower()}"
+
+    attempts = await redis_client.get(attempts_key)
+    if attempts is not None and int(attempts) >= LOGIN_ATTEMPT_LIMIT:
+        raise AndromedaError(429, "too_many_requests", "Too many failed login attempts, try again later")
+
     result = await session.exec(select(User).where(User.email == request.email))
     user = result.one_or_none()
 
@@ -101,8 +120,14 @@ async def auth_user_login(request: UserLoginRequest, session: AsyncSession) -> U
     )
 
     if user is None or not user.is_active or not user.password_hash or not password_ok:
+        async with redis_client.pipeline(transaction=True) as pipe:
+            pipe.incr(attempts_key)
+            pipe.expire(attempts_key, LOGIN_ATTEMPT_WINDOW)
+            await pipe.execute()
         raise AndromedaError(401, "unauthorized", "Invalid email or password")
-        
+
+    await redis_client.delete(attempts_key)
+
     user.last_login = datetime.now(timezone.utc)
     session.add(user)
     await session.commit()
