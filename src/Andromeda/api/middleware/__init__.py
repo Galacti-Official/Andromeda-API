@@ -1,1 +1,2 @@
 from .rate_limiter import RateLimiterMiddleware
+from .security_headers import SecurityHeadersMiddleware
