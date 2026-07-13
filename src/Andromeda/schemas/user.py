@@ -1,6 +1,9 @@
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_MAX_LENGTH = 128
 
 
 class UserPublic(BaseModel):
@@ -16,9 +19,9 @@ class UserPublic(BaseModel):
 
 
 class UserCreate(BaseModel):
-    name: str
-    email: str
-    password: str
+    name: str = Field(min_length=1, max_length=64)
+    email: EmailStr = Field(max_length=254)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
 
 class UserCreateResponse(BaseModel):
@@ -28,8 +31,8 @@ class UserCreateResponse(BaseModel):
 
 
 class UserLoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=PASSWORD_MAX_LENGTH)
 
 
 class UserLoginResponse(BaseModel):
@@ -44,12 +47,12 @@ class UserLogoutResponse(BaseModel):
 
 
 class UserEditRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=64)
 
 
 class UserChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(max_length=PASSWORD_MAX_LENGTH)
+    new_password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
 
 
 class UserChangePasswordResponse(BaseModel):
